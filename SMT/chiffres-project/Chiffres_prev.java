@@ -252,8 +252,31 @@ public class Chiffres {
      * step + 1 sont liés par une action "push(num)".
      */
     private BoolExpr pushNumFormula(int step, int num) {
-        System.out.println("Attention : la méthode pushNumFormula n'est pas définie !");
-        return context.mkTrue();
+        ArrayExpr stack     = stackStateVar(step);
+        IntExpr   idx       = idxStateVar(step);
+        ArrayExpr nextStack = stackStateVar(step + 1);
+        IntExpr   nextIdx   = idxStateVar(step + 1);
+        BoolExpr  actionVar = pushNumVar(step, num);
+
+        // Si cette action a déjà eu lieu dans le passé, on l'interdit à ce step.
+        BoolExpr atMostOnce = context.mkTrue();
+
+        if (step > 0) {
+            ArrayList<BoolExpr> arr = new ArrayList<>();
+
+            for (int i = 0; i < step; i++) {
+                arr.add(pushNumVar(i, num));
+            }
+
+            BoolExpr pushedBefore = context.mkOr(arr.stream().toArray(BoolExpr[]::new));
+            atMostOnce = context.mkImplies(pushedBefore, context.mkNot(actionVar));
+        }
+
+        BoolExpr idxOk = context.mkEq(nextIdx, context.mkAdd(idx, context.mkInt(1)));
+        BoolExpr stackOk = context.mkEq(nextStack,
+                                        context.mkStore(stack, idx, toBvNum(num)));
+
+        return context.mkImplies(actionVar, context.mkAnd(atMostOnce, idxOk, stackOk));
     }
 
 
@@ -283,8 +306,28 @@ public class Chiffres {
 
 
     private BoolExpr actionFormula(int step, ActionVar actVar, ActionPrecondition precond, ActionResult opRes) {
-        System.out.println("Attention : la méthode actionFormula n'est pas définie !");
-        return context.mkTrue();
+        ArrayExpr  stack     = stackStateVar(step);
+        IntExpr    idx       = idxStateVar(step);
+        ArrayExpr  nextStack = stackStateVar(step + 1);
+        IntExpr    nextIdx   = idxStateVar(step + 1);
+        ArithExpr  idxM1     = context.mkSub(idx, context.mkInt(1));
+        ArithExpr  idxM2     = context.mkSub(idx, context.mkInt(2));
+        BitVecExpr e1        = (BitVecExpr) context.mkSelect(stack, idxM1);
+        BitVecExpr e2        = (BitVecExpr) context.mkSelect(stack, idxM2);
+        BoolExpr   twoElems  = context.mkGe(idx, context.mkInt(2));
+        ArrayExpr  stackRes  = context.mkStore(stack, idxM2, opRes.get(step, e1, e2));
+        BoolExpr   idxOk     = context.mkEq(nextIdx, idxM1);
+        BoolExpr   stackOk   = context.mkEq(nextStack, stackRes);
+        BoolExpr   postCond  = context.mkAnd(idxOk, stackOk);
+
+        return context.mkImplies(
+            actVar.get(step),
+            context.mkAnd(
+                twoElems,
+                precond.get(step, e1, e2),
+                postCond
+                )
+            );
     }
 
     /**
@@ -292,8 +335,18 @@ public class Chiffres {
      * step + 1 sont liés par une action "addition".
      */
     private BoolExpr addFormula(int step) {
-        System.out.println("Attention : la méthode addFormula n'est pas définie !");
-        return context.mkTrue();
+        ActionVar actVar = this::addVar;
+
+        ActionPrecondition precond = (s, e1, e2) -> {
+            if (noOverflows) {
+                return context.mkBVAddNoOverflow(e1, e2, true);
+            } else {
+                return context.mkTrue();
+            }
+        };
+
+        ActionResult opRes = (s, e1, e2) -> context.mkBVAdd(e1, e2);
+        return actionFormula(step, actVar, precond, opRes);
     }
 
     /**
@@ -301,8 +354,20 @@ public class Chiffres {
      * step + 1 sont liés par une action "soustraction".
      */
     private BoolExpr subFormula(int step) {
-        System.out.println("Attention : la méthode subFormula n'est pas définie !");
-        return context.mkTrue();
+        ActionVar actVar = this::subVar;
+
+        ActionPrecondition precond = (s, e1, e2) -> {
+            if (noOverflows) {
+                return context.mkAnd(
+                    context.mkBVSubNoOverflow(e1, e2),
+                    context.mkBVSubNoUnderflow(e1, e2, true));
+            } else {
+                return context.mkTrue();
+            }
+        };
+
+        ActionResult opRes = (s, e1, e2) -> context.mkBVSub(e1, e2);
+        return actionFormula(step, actVar, precond, opRes);
     }
 
     /**
@@ -310,8 +375,18 @@ public class Chiffres {
      * step + 1 sont liés par une action "multiplication".
      */
     private BoolExpr mulFormula(int step) {
-        System.out.println("Attention : la méthode mulFormula n'est pas définie !");
-        return context.mkTrue();
+        ActionVar actVar = this::mulVar;
+
+        ActionPrecondition precond = (s, e1, e2) -> {
+            if (noOverflows) {
+                return context.mkBVMulNoOverflow(e1, e2, true);
+            } else {
+                return context.mkTrue();
+            }
+        };
+
+        ActionResult opRes = (s, e1, e2) -> context.mkBVMul(e1, e2);
+        return actionFormula(step, actVar, precond, opRes);
     }
 
     /**
@@ -319,8 +394,19 @@ public class Chiffres {
      * step + 1 sont liés par une action "division".
      */
     private BoolExpr divFormula(int step) {
-        System.out.println("Attention : la méthode divFormula n'est pas définie !");
-        return context.mkTrue();
+        ActionVar actVar = this::divVar;
+
+        ActionPrecondition precond = (s, e1, e2) -> {
+            BoolExpr notZero = context.mkNot(context.mkEq(e2, toBvNum(0)));
+            if (noOverflows) {
+                return context.mkAnd(notZero, context.mkBVSDivNoOverflow(e1, e2));
+            } else {
+                return notZero;
+            }
+        };
+
+        ActionResult opRes = (s, e1, e2) -> context.mkBVSDiv(e1, e2);
+        return actionFormula(step, actVar, precond, opRes);
     }
 
     /**
@@ -347,8 +433,19 @@ public class Chiffres {
      * une transition d'action.
      */
     private BoolExpr transitionFormula(int step) {
-        System.out.println("Attention : la méthode transitionFormula n'est pas définie !");
-        return context.mkTrue();
+        ArrayList<BoolExpr> arr = new ArrayList<>();
+
+        for (int num : nums) {
+            arr.add(pushNumFormula(step, num));
+        }
+
+        arr.add(mulFormula(step));
+        arr.add(divFormula(step));
+        arr.add(addFormula(step));
+        arr.add(subFormula(step));
+        arr.add(exactlyOne(allActions(step)));
+
+        return context.mkAnd(arr.stream().toArray(BoolExpr[]::new));
     }
 
     /**
@@ -356,8 +453,12 @@ public class Chiffres {
      * toutes les cellules à zéro et dessus de pile à zero).
      */
     private BoolExpr initialStateFormula() {
-        System.out.println("Attention : la méthode initialStateFormula n'est pas définie !");
-        return context.mkTrue();
+        ArrayExpr stack = stackStateVar(0);
+        IntExpr   idx   = idxStateVar(0);
+
+        return context.mkAnd(
+            context.mkEq(idx, context.mkInt(0)),
+            context.mkEq(stack, context.mkConstArray(intSort, toBvNum(0))));
     }
 
     /**
@@ -365,8 +466,15 @@ public class Chiffres {
      * à la valeur cible au pas "step".
      */
     private BoolExpr finalStateFormula(int step) {
-        System.out.println("Attention : la méthode finalStateFormula n'est pas définie !");
-        return context.mkTrue();
+        ArrayExpr  stack = stackStateVar(step);
+        IntExpr    idx   = idxStateVar(step);
+        ArithExpr  idxM1 = context.mkSub(idx, context.mkInt(1));
+        BitVecExpr e1    = (BitVecExpr) context.mkSelect(stack, idxM1);
+
+        return context.mkAnd(
+            context.mkEq(idx, context.mkInt(1)),
+            context.mkEq(e1, toBvNum(target))
+            );
     }
 
     /**
@@ -396,8 +504,31 @@ public class Chiffres {
             System.out.println("\n\nsolveExact without timeout" );
         }
 
-        System.out.println("Attention : la méthode solveExact n'est pas définie !");
-        return Status.UNKNOWN;
+        for (int step = 0; step <= maxNofSteps; step++) {
+            solver.add(transitionFormula(step));
+            solver.push();
+            solver.add(finalStateFormula(step + 1));
+            Status status = solver.check();
+
+            switch (status) {
+            case UNKNOWN:
+                System.out.println("- Unknown :\n" + solver.getReasonUnknown());
+                return Status.UNKNOWN;
+
+            case SATISFIABLE:
+                Model m = solver.getModel();
+                System.out.println("- SAT at step " + String.valueOf(step));
+                printModel(m, step);
+                return Status.SATISFIABLE;
+
+            case UNSATISFIABLE:
+                System.out.println("- UNSAT at step " + String.valueOf(step));
+                solver.pop();
+                break;
+            }
+        }
+
+        return Status.UNSATISFIABLE;
     }
 
     /**
@@ -405,8 +536,7 @@ public class Chiffres {
      * "step".
      */
     private BoolExpr finalStateApproxFormula(int step) {
-        System.out.println("Attention : la méthode finalStateApproxFormula n'est pas définie !");
-        return context.mkTrue();
+        return context.mkNot(finalStateFormula(step));
     }
 
     /**
@@ -414,8 +544,15 @@ public class Chiffres {
      * du dessus de la pile et la valeur cible au pas "step".
      */
     private BitVecExpr finalStateApproxCriterion(int step) {
-        System.out.println("Attention : la méthode finalStateApproxCriterion n'est pas définie !");
-        return this.toBvNum(0);
+        ArrayExpr  stack = stackStateVar(step);
+        IntExpr    idx   = idxStateVar(step);
+        ArithExpr  idxM1 = context.mkSub(idx, context.mkInt(1));
+        BitVecExpr e1    = (BitVecExpr) context.mkSelect(stack, idxM1);
+        BitVecExpr diff  = context.mkBVSub(toBvNum(target), e1);
+        BitVecExpr abs   = (BitVecExpr) context.mkITE(
+            context.mkBVSGE(diff, toBvNum(0)), diff, context.mkBVNeg(diff));
+
+        return abs;
     }
 
     /**
@@ -432,24 +569,52 @@ public class Chiffres {
      * pour toutes les itérations, on retourne le status SAT.
      */
     private Status solveApprox(int timeout) {
-        System.out.println("Attention : la méthode solveApprox n'est pas définie !");
+        if (timeout > 0)
+            System.out.println("\n\nsolveApprox with timeout " +
+                               String.valueOf(timeout));
+        else
+            System.out.println("\n\nsolveApprox without timeout" );
 
-        // ce solver n'est pas incrémental, il faut le recréer à
-        // chaque nouvelle itération du BMC.
-        // utiliser les méthodes suivantes sur le solveur (attention
-        // aux majuscules !) :
-        // - Add pour ajouter une formule
-        // - MkMinimize pour ajouter un critère à optimiser
-        // - Check pour résoudre
-        Optimize solver = context.mkOptimize();
+        for (int step = 0; step <= maxNofSteps; step++) {
+            Optimize solver = context.mkOptimize();
 
-        if (timeout > 0) {
-            Params p = context.mkParams();
-            p.add("timeout", timeout);
-            solver.setParameters(p);
+            if (timeout > 0) {
+                Params p = context.mkParams();
+                p.add("timeout", timeout);
+                solver.setParameters(p);
+            }
+
+            solver.Add(initialStateFormula());
+
+            for (int istep = 0; istep <= step; istep++) {
+                solver.Add(transitionFormula(istep));
+            }
+
+            solver.Add(finalStateApproxFormula(step + 1));
+            solver.MkMinimize(finalStateApproxCriterion(step + 1));
+            Status status = solver.Check();
+
+            switch (status) {
+            case UNKNOWN:
+                System.out.println("\n- Unknown at step " +
+                                   String.valueOf(step));
+                System.out.println(solver.getReasonUnknown());
+                break;
+
+            case SATISFIABLE:
+                Model m = solver.getModel();
+                System.out.println("\n- SAT at step " +
+                                   String.valueOf(step));
+                printModel(m, step);
+                break;
+
+            case UNSATISFIABLE:
+                System.out.println("\n- UNSAT at step " +
+                                   String.valueOf(step));
+                return Status.UNSATISFIABLE;
+            }
         }
-
-        return Status.UNKNOWN;
+        return Status.SATISFIABLE;
     }
 
     /**
@@ -526,9 +691,9 @@ public class Chiffres {
 
     private void printParams() {
         System.out.println("\nParameters:");
-        System.out.println("- bvBits     : " + String.valueOf(bvBits));
-        System.out.println("- noOverflows: " + String.valueOf(noOverflows));
-        System.out.println("- nums       : " + Arrays.toString(nums));
-        System.out.println("- target     : " + String.valueOf(target));
+        System.out.println("- bvBits     :" + String.valueOf(bvBits));
+        System.out.println("- noOverflows:" + String.valueOf(noOverflows));
+        System.out.println("- nums       :" + Arrays.toString(nums));
+        System.out.println("- target     :" + String.valueOf(target));
     }
 }
