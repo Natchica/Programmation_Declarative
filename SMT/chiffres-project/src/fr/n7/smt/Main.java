@@ -87,8 +87,8 @@ public class Main {
     }
 
     public static void main(String[] args) {
-        // testUnit();
+        testUnit();
         // testSimple();
-        testAll();
+        // testAll();
     }
 }
