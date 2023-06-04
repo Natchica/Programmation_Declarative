@@ -2,7 +2,7 @@
 # Vous pouvez modifier cette variable d'environnement si vous
 # avez installé Z3 sur votre compte ou sur votre machine
 # personnelle.
-PATH_TO_Z3 = /mnt/c/Users/natha/Documents/N7/Ecole/2A/Cours/S8/Programmation_Declarative/SAT_SMT/Z3/bin
+PATH_TO_Z3 = /mnt/c/Users/natha/Documents/N7/Ecole/2A/Cours/S8/Programmation_Declarative/SAT_SMT/z3_linux/bin
 
 JAVAC = javac
 JAVA = LD_LIBRARY_PATH=$(PATH_TO_Z3) java
